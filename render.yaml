@@ -1,0 +1,104 @@
+# Euromar Signing: Documenso on Render (Frankfurt).
+#
+# Resources:
+#   docu-euromar        Documenso web app (official image, pinned version)
+#   docu-euromar-db     its Postgres (signing sessions, accounts, tokens)
+#   docu-euromar-purge  nightly job deleting finished envelopes + their PDFs
+#
+# Secrets marked `sync: false` are entered once in the dashboard when the
+# Blueprint is first applied (see docs/DEPLOY.md). Everything else is
+# committed here, so a Blueprint sync always reproduces the same setup.
+
+databases:
+  - name: docu-euromar-db
+    databaseName: documenso
+    user: documenso
+    plan: basic-256mb
+    region: frankfurt
+    postgresMajorVersion: "16"
+    ipAllowList: []   # internal connections only
+
+services:
+  - type: web
+    name: docu-euromar
+    runtime: image
+    image:
+      # Bump only via docs/UPGRADING.md (CI re-tests the pinned version).
+      url: docker.io/documenso/documenso:v2.20.0
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: NEXT_PUBLIC_WEBAPP_URL
+        value: https://docu-euromar.onrender.com
+      - key: NEXT_PRIVATE_INTERNAL_WEBAPP_URL
+        value: http://localhost:3000
+
+      - key: NEXT_PRIVATE_DATABASE_URL
+        fromDatabase: { name: docu-euromar-db, property: connectionString }
+      - key: NEXT_PRIVATE_DIRECT_DATABASE_URL
+        fromDatabase: { name: docu-euromar-db, property: connectionString }
+
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: NEXT_PRIVATE_ENCRYPTION_KEY
+        generateValue: true
+      - key: NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY
+        generateValue: true
+
+      # PDFs live in the database only while a signing session is open; apps
+      # copy the results to their own storage and the purge job removes them.
+      - key: NEXT_PUBLIC_UPLOAD_TRANSPORT
+        value: database
+      - key: NEXT_PUBLIC_DOCUMENT_SIZE_UPLOAD_LIMIT
+        value: "20"
+      - key: NEXT_PRIVATE_JOBS_PROVIDER
+        value: local
+
+      # Signing certificate: base64 of cert.p12 (deploy/scripts/make-selfsigned-cert.sh).
+      - key: NEXT_PRIVATE_SIGNING_TRANSPORT
+        value: local
+      - key: NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS
+        sync: false
+      - key: NEXT_PRIVATE_SIGNING_PASSPHRASE
+        sync: false
+      - key: NEXT_PRIVATE_SIGNING_REASON
+        value: Electronically signed via Euromar e-signing
+      # RFC 3161 timestamp + long-term validation. Optional; left unset
+      # until verified on the live instance (docs/DEPLOY.md, step 6).
+      - key: NEXT_PRIVATE_SIGNING_TIMESTAMP_AUTHORITY
+        sync: false
+
+      # Mail (account verification / password reset only; apps send no
+      # signing emails through Documenso). Resend with the verified domain.
+      - key: NEXT_PRIVATE_SMTP_TRANSPORT
+        value: resend
+      - key: NEXT_PRIVATE_RESEND_API_KEY
+        sync: false
+      - key: NEXT_PRIVATE_SMTP_FROM_NAME
+        value: Euromar e-signing
+      - key: NEXT_PRIVATE_SMTP_FROM_ADDRESS
+        value: signing@email.eu-registry.com
+
+      # Signup is open only for the first admin account; flip to "true"
+      # right after (docs/DEPLOY.md, step 4).
+      - key: NEXT_PUBLIC_DISABLE_SIGNUP
+        value: "false"
+      - key: DOCUMENSO_DISABLE_TELEMETRY
+        value: "true"
+
+  - type: cron
+    name: docu-euromar-purge
+    runtime: python
+    region: frankfurt
+    plan: starter
+    schedule: "17 2 * * *"   # 02:17 UTC daily
+    buildCommand: pip install "./python[purge]"
+    startCommand: euromar-signing purge --older-than-days 30 --pending-older-than-days 30
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL
+        fromDatabase: { name: docu-euromar-db, property: connectionString }

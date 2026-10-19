@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: python } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - run: ruff check . && black --check .
+      - run: pytest
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e "python[dev]" && python -m playwright install --with-deps chromium
+      - run: deploy/scripts/bootstrap-local.sh
+      - run: pytest -m integration -v
+        working-directory: python
+      - if: failure()
+        run: docker compose -f deploy/docker-compose.yml logs documenso | tail -200

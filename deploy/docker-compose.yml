@@ -1,0 +1,70 @@
+# Local Documenso stack for development and CI.
+#
+#   cd deploy && ./scripts/bootstrap-local.sh     # starts the stack + seeds an
+#                                                 # admin, team, API token, webhook
+#
+# Same image tag as render.yaml, so local tests run against what production
+# runs. Mailpit catches every mail (UI on http://localhost:8025).
+name: euromar-signing
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: documenso
+      POSTGRES_PASSWORD: documenso
+      POSTGRES_DB: documenso
+    ports:
+      - "${DOCUMENSO_DB_PORT:-54329}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U documenso -d documenso"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+
+  documenso:
+    image: documenso/documenso:v2.20.0
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${DOCUMENSO_PORT:-3005}:3000"
+    environment:
+      PORT: "3000"
+      NEXTAUTH_SECRET: local-dev-nextauth-secret-change-me
+      NEXT_PRIVATE_ENCRYPTION_KEY: local-dev-encryption-key-0123456789abcdef
+      NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY: local-dev-encryption-key2-0123456789abcdef
+      NEXT_PUBLIC_WEBAPP_URL: "http://localhost:${DOCUMENSO_PORT:-3005}"
+      NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+      NEXT_PRIVATE_DATABASE_URL: postgres://documenso:documenso@db:5432/documenso
+      NEXT_PRIVATE_DIRECT_DATABASE_URL: postgres://documenso:documenso@db:5432/documenso
+      NEXT_PUBLIC_UPLOAD_TRANSPORT: database
+      NEXT_PRIVATE_JOBS_PROVIDER: local
+      NEXT_PRIVATE_SMTP_TRANSPORT: smtp-auth
+      NEXT_PRIVATE_SMTP_HOST: mailpit
+      NEXT_PRIVATE_SMTP_PORT: "1025"
+      NEXT_PRIVATE_SMTP_FROM_NAME: Euromar Signing (local)
+      NEXT_PRIVATE_SMTP_FROM_ADDRESS: signing@localhost
+      NEXT_PRIVATE_SIGNING_TRANSPORT: local
+      # Written by bootstrap-local.sh (self-signed, passphrase "local").
+      NEXT_PRIVATE_SIGNING_LOCAL_FILE_PATH: /opt/documenso/cert.p12
+      NEXT_PRIVATE_SIGNING_PASSPHRASE: local
+      # Webhooks to the host machine (your app on localhost) are private URLs,
+      # which Documenso blocks unless allow-listed.
+      NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS: host.docker.internal,localhost,127.0.0.1
+      DOCUMENSO_DISABLE_TELEMETRY: "true"
+      NEXT_PUBLIC_DOCUMENT_SIZE_UPLOAD_LIMIT: "20"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./.local/cert.p12:/opt/documenso/cert.p12:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
