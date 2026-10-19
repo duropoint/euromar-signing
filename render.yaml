@@ -82,10 +82,10 @@ services:
       - key: NEXT_PRIVATE_SMTP_FROM_ADDRESS
         value: signing@email.eu-registry.com
 
-      # Signup is open only for the first admin account; flip to "true"
-      # right after (docs/DEPLOY.md, step 4).
+      # Closed after the first admin account was created (docs/DEPLOY.md,
+      # step 4). New admins are invited from the organisation settings.
       - key: NEXT_PUBLIC_DISABLE_SIGNUP
-        value: "false"
+        value: "true"
       - key: DOCUMENSO_DISABLE_TELEMETRY
         value: "true"
 
