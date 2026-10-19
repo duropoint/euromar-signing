@@ -2,8 +2,9 @@
 from inside a host page that iframes the embed URL (like an app does).
 
 Test-only. Selectors follow Documenso's own e2e suite (signature-pad test ids,
-"Next Field" / "Complete" / "Sign" buttons) for the pinned version; fields
-on the v2 PDF viewer are canvas-drawn, so they are clicked by position.
+"Next Field" / "Complete" / "Sign" buttons) for the pinned version. Fields on
+the v2 PDF viewer are canvas-drawn (no DOM node), so each one is clicked just
+below the "Click to insert field" tooltip that "Next Field" shows above it.
 """
 
 from __future__ import annotations
@@ -14,8 +15,6 @@ import socketserver
 import tempfile
 import threading
 from contextlib import contextmanager
-
-from euromar_signing import SignatureBox
 
 CHROMIUM = os.environ.get("CHROMIUM_PATH") or None
 if CHROMIUM is None and os.path.exists("/opt/pw-browsers/chromium"):
@@ -53,10 +52,10 @@ def _serve_host_page(embed_url: str):
 
 
 def sign_in_embed(
-    embed_url: str, boxes: list[SignatureBox], *, typed_signature: str = "Test Signer"
+    embed_url: str, *, typed_signature: str = "Test Signer", max_fields: int = 20
 ) -> list[dict]:
-    """Type a signature once, insert it into every field (in order), complete.
-    Returns the postMessage events the host page received."""
+    """Type a signature once, insert it into every field, complete. Returns
+    the postMessage events the host page received."""
     from playwright.sync_api import sync_playwright
 
     with _serve_host_page(embed_url) as host_url, sync_playwright() as p:
@@ -76,18 +75,18 @@ def sign_in_embed(
             frame.get_by_role("button", name="Next").click()
             page.wait_for_timeout(500)
 
-            for box in boxes:
+            complete = frame.get_by_role("button", name="Complete")
+            for _ in range(max_fields):
+                if complete.count():
+                    break
                 frame.get_by_role("button", name="Next Field").first.click()
-                page.wait_for_timeout(1200)
-                canvas = frame.locator(".konva-container canvas").first
-                bb = canvas.bounding_box()
-                page.mouse.click(
-                    bb["x"] + bb["width"] * (box.x + box.width / 2) / 100,
-                    bb["y"] + bb["height"] * (box.y + box.height / 2) / 100,
-                )
-                page.wait_for_timeout(1200)
+                tip = frame.get_by_text("Click to insert field").first
+                tip.wait_for(timeout=10_000)
+                bb = tip.bounding_box()
+                page.mouse.click(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] + 20)
+                page.wait_for_timeout(800)
 
-            frame.get_by_role("button", name="Complete").first.click()
+            complete.first.click()
             frame.get_by_role("dialog").get_by_role("button", name="Sign").click()
             page.wait_for_function(
                 "window.messages.some(m => m.data && m.data.action === 'document-completed')",

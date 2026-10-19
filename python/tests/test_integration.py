@@ -142,8 +142,7 @@ def test_full_signing_flow(env, service, webhooks):
     pending = service.fetch_result(session.envelope_id)
     assert pending.status == "PENDING" and pending.documents == {}
 
-    boxes = [box for d in docs for box in d.signature_boxes]
-    messages = sign_in_embed(session.embed_url, boxes, typed_signature="Jane Signer")
+    messages = sign_in_embed(session.embed_url, typed_signature="Jane Signer")
     origin = env["DOCUMENSO_URL"]
     completed = [m for m in messages if m["data"].get("action") == "document-completed"]
     assert completed and completed[0]["origin"] == origin
