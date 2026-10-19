@@ -6,8 +6,11 @@ Each app gets its own team, API token and webhook. 👤 = Documenso admin.
    named after the app (e.g. `CPP`).
 2. 👤 **Team settings → Document:**
    - Language: English
-   - Include signing certificate: **on** · Include audit log: off (apps fetch
-     the audit log PDF separately)
+   - Include signing certificate: per app. **On** appends a "Signing
+     Certificate" page to every signed PDF; **off** keeps the documents
+     unchanged (the PAdES seal is applied either way). CPP: off.
+   - Include audit log: off. Apps fetch the audit-log PDF separately
+     (`SigningResult.audit_log_pdf`) and store it as the evidence record.
    - Typed + drawn signatures allowed; uploaded signatures off.
 3. 👤 **API token.** Team settings → API tokens → create `<app>-production`,
    no expiry. Copy it once — it is shown only at creation.
